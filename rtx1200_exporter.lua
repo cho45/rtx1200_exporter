@@ -107,6 +107,20 @@ while 1 do
 				$"ipChannel{proto=\"v6\"} ${v6channel}\n"
 			)
 			if err then error(err) end
+
+			ok, result = rt.command("show status dhcp")
+			dhcptotal = string.match(result, /全アドレス数:\s*(\d+)/)
+			dhcpexcluded = string.match(result, /除外アドレス数:\s*(\d+)/)
+			dhcpassigned = string.match(result, /割り当て中アドレス数:\s*(\d+)/)
+			dhcpavailable = string.match(result, /利用[^:]+?アドレス数:\s*(\d+)/)
+			sent, err = control:send(
+				"# TYPE ipDhcp gauge\n"..
+				$"ipDhcp{} ${dhcptotal}\n"..
+				$"ipDhcp{type=\"excluded\"} ${dhcpexcluded}\n"..
+				$"ipDhcp{type=\"assigned\"} ${dhcpassigned}\n"..
+				$"ipDhcp{type=\"available\"} ${dhcpavailable}\n"
+			)
+			if err then error(err) end
 		elseif string.find(request, "GET / ") == 1 then
 			sent, err = control:send(
 				"HTTP/1.0 200 OK\r\n"..
