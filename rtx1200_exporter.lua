@@ -5,6 +5,7 @@ Prometheus exporter for RTX1200
 lua /rtx1200_exporter.lua
 show status lua
 
+schedule at 1 startup * lua /rtx1200_exporter.lua 
 ]]
 -- vim:fenc=cp932
 
@@ -149,6 +150,10 @@ tinysnmp = {
 }
 
 snmpmetrics = {
+	sysUpTimeInstance = {
+		"counter",
+		{ oid = "1.3.6.1.2.1.1.3.0", label = '', },
+	},
 	ifOutDiscards = {
 		"counter",
 		{ oid = "1.3.6.1.2.1.2.2.1.19.1", label = '{if="1"}', },
@@ -212,18 +217,18 @@ if not res and err then
 end
 
 while 1 do
-	control = assert(tcp:accept())
+	local control = assert(tcp:accept())
 
-	raddr, rport = control:getpeername()
+	local raddr, rport = control:getpeername()
 
 	control:settimeout(30)
-	ok, err = pcall(function ()
+	local ok, err = pcall(function ()
 		-- get request line
-		request, err, partial = control:receive()
+		local request, err, partial = control:receive()
 		if err then error(err) end
 		-- get request headers
 		while 1 do
-			header, err, partial = control:receive()
+			local header, err, partial = control:receive()
 			if err then error(err) end
 			if header == "" then
 				-- end of headers
@@ -234,7 +239,7 @@ while 1 do
 		end
 
 		if string.find(request, "GET /metrics ") == 1 then
-			sent, err = control:send(
+			local sent, err = control:send(
 				"HTTP/1.0 200 OK\r\n"..
 				"Connection: close\r\n"..
 				"Content-Type: text/plain\r\n"..
@@ -243,12 +248,13 @@ while 1 do
 			)
 			if err then error(err) end
 
-			ok, result = rt.command("show environment")
+			local ok, result = rt.command("show environment")
 			if not ok then error("command failed") end
-			cpu5sec, cpu1min, cpu5min, memused = string.match(result, /CPU:\s*(\d+)%\(5sec\)\s*(\d+)%\(1min\)\s*(\d+)%\(5min\)\s*メモリ:\s*(\d+)% used/)
-			temperature = string.match(result, /筐体内温度\(.*\): (\d+)/)
+			local cpu5sec, cpu1min, cpu5min, memused = string.match(result, /CPU:\s*(\d+)%\(5sec\)\s*(\d+)%\(1min\)\s*(\d+)%\(5min\)\s*メモリ:\s*(\d+)% used/)
+			local temperature = string.match(result, /筐体内温度\(.*\): (\d+)/)
+			local luacount = collectgarbage("count")
 
-			sent, err = control:send(
+			local sent, err = control:send(
 				"# TYPE yrhCpuUtil5sec gauge\n"..
 				$"yrhCpuUtil5sec ${cpu5sec}\n"..
 				"# TYPE yrhCpuUtil1min gauge\n"..
@@ -258,22 +264,24 @@ while 1 do
 				"# TYPE yrhInboxTemperature gauge\n"..
 				$"yrhInboxTemperature ${temperature}\n"..
 				"# TYPE yrhMemoryUtil gauge\n"..
-				$"yrhMemoryUtil ${memused}\n"
+				$"yrhMemoryUtil ${memused}\n"..
+				"# TYPE yrhLuaCount gauge\n"..
+				$"yrhLuaCount ${luacount}\n"
 			)
 			if err then error(err) end
 
-			sent, err = control:send(
+			local sent, err = control:send(
 				"# TYPE ifOutOctets counter\n"..
 				"# TYPE ifInOctets counter\n"
 			)
 			if err then error(err) end
 
 			for n = 1, 3 do
-				ok, result = rt.command($"show status lan${n}")
+				local ok, result = rt.command($"show status lan${n}")
 				if not ok then error("command failed") end
-				txpackets, txoctets = string.match(result, /送信パケット:\s*(\d+)\s*パケット\((\d+)\s*オクテット\)/)
-				rxpackets, rxoctets = string.match(result, /受信パケット:\s*(\d+)\s*パケット\((\d+)\s*オクテット\)/)
-				sent, err = control:send(
+				local txpackets, txoctets = string.match(result, /送信パケット:\s*(\d+)\s*パケット\((\d+)\s*オクテット\)/)
+				local rxpackets, rxoctets = string.match(result, /受信パケット:\s*(\d+)\s*パケット\((\d+)\s*オクテット\)/)
+				local sent, err = control:send(
 					$"ifOutOctets{if=\"${n}\"} ${txoctets}\n"..
 					$"ifInOctets{if=\"${n}\"} ${rxoctets}\n"..
 					$"ifOutPkts{if=\"${n}\"} ${txpackets}\n"..
@@ -282,13 +290,13 @@ while 1 do
 				if err then error(err) end
 			end
 
-			ok, result = rt.command("show ip connection summary")
-			v4session, v4channel = string.match(result, /Total Session: (\d+)\s+Total Channel:\s*(\d+)/)
+			local ok, result = rt.command("show ip connection summary")
+			local v4session, v4channel = string.match(result, /Total Session: (\d+)\s+Total Channel:\s*(\d+)/)
 
-			ok, result = rt.command("show ipv6 connection summary")
-			v6session, v6channel = string.match(result, /Total Session: (\d+)\s+Total Channel:\s*(\d+)/)
+			local ok, result = rt.command("show ipv6 connection summary")
+			local v6session, v6channel = string.match(result, /Total Session: (\d+)\s+Total Channel:\s*(\d+)/)
 
-			sent, err = control:send(
+			local sent, err = control:send(
 				"# TYPE ipSession counter\n"..
 				$"ipSession{proto=\"v4\"} ${v4session}\n"..
 				$"ipSession{proto=\"v6\"} ${v6session}\n"..
@@ -298,12 +306,12 @@ while 1 do
 			)
 			if err then error(err) end
 
-			ok, result = rt.command("show status dhcp")
-			dhcptotal = string.match(result, /全アドレス数:\s*(\d+)/)
-			dhcpexcluded = string.match(result, /除外アドレス数:\s*(\d+)/)
-			dhcpassigned = string.match(result, /割り当て中アドレス数:\s*(\d+)/)
-			dhcpavailable = string.match(result, /利用[^:]+?アドレス数:\s*(\d+)/)
-			sent, err = control:send(
+			local ok, result = rt.command("show status dhcp")
+			local dhcptotal = string.match(result, /全アドレス数:\s*(\d+)/)
+			local dhcpexcluded = string.match(result, /除外アドレス数:\s*(\d+)/)
+			local dhcpassigned = string.match(result, /割り当て中アドレス数:\s*(\d+)/)
+			local dhcpavailable = string.match(result, /利用[^:]+?アドレス数:\s*(\d+)/)
+			local sent, err = control:send(
 				"# TYPE ipDhcp gauge\n"..
 				$"ipDhcp{} ${dhcptotal}\n"..
 				$"ipDhcp{type=\"excluded\"} ${dhcpexcluded}\n"..
@@ -313,10 +321,10 @@ while 1 do
 			if err then error(err) end
 
 			-- get metrics from snmp
-			udp = rt.socket.udp()
-			res, err = udp:setpeername("127.0.0.1",  161)
+			local udp = rt.socket.udp()
+			local res, err = udp:setpeername("127.0.0.1",  161)
 			udp:settimeout(1)
-			ok, err = pcall(function ()
+			local ok, err = pcall(function ()
 				-- send snmp get request
 				local requestids = {}
 				for name, v in pairs(snmpmetrics) do
@@ -367,7 +375,7 @@ while 1 do
 			if err then error(err) end
 
 		elseif string.find(request, "GET / ") == 1 then
-			sent, err = control:send(
+			local sent, err = control:send(
 				"HTTP/1.0 200 OK\r\n"..
 				"Connection: close\r\n"..
 				"Content-Type: text/html\r\n"..
@@ -375,7 +383,7 @@ while 1 do
 				"<!DOCTYPE html><title>RTX1200 Prometheus exporter</title><p><a href='/metrics'>/metrics</a>"
 			)
 		else
-			sent, err = control:send(
+			local sent, err = control:send(
 				"HTTP/1.0 404 Not Found\r\n"..
 				"Connection: close\r\n"..
 				"Content-Type: text/plain\r\n"..
