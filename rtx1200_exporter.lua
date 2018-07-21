@@ -152,4 +152,5 @@ while 1 do
 		rt.syslog("INFO", "failed to response " .. err)
 	end
 	control:close()
+	collectgarbage("collect")
 end
